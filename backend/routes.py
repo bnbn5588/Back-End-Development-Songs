@@ -51,3 +51,100 @@ def parse_json(data):
 ######################################################################
 # INSERT CODE HERE
 ######################################################################
+@app.route("/health", methods=["GET"])
+def health():
+    """Return health status of the app."""
+    return jsonify({"status": "OK"}), 200
+
+@app.route("/count", methods=["GET"])
+def count():
+    """Return the total number of songs in the MongoDB collection."""
+    count = db.songs.count_documents({})  # Count all documents in the 'songs' collection
+    return jsonify({"count": count}), 200
+
+######################################################################
+# SONGS ENDPOINT
+######################################################################
+@app.route("/song", methods=["GET"])
+def songs():
+    """Return all songs from the MongoDB collection."""
+    # Fetch all songs from the MongoDB collection
+    songs = list(db.songs.find({}))  # Convert the cursor to a list
+    return jsonify({"songs": parse_json(songs)}), 200  # Return the songs in JSON format
+
+######################################################################
+# GET SONG BY ID ENDPOINT
+######################################################################
+@app.route("/song/<int:id>", methods=["GET"])
+def get_song_by_id(id):
+    """Return a song by its id."""
+    # Search for the song in the MongoDB collection
+    song = db.songs.find_one({"id": id})
+
+    # If song not found, return 404 with a message
+    if not song:
+        return jsonify({"message": f"song with id {id} not found"}), 404
+
+    # Return the found song as JSON with a 200 status
+    return jsonify(parse_json(song)), 200
+
+######################################################################
+# CREATE SONG ENDPOINT
+######################################################################
+@app.route("/song", methods=["POST"])
+def create_song():
+    data = request.get_json()  # Extract JSON data from the request
+    song_id = data.get('id')   # Get song ID
+    
+    # Check if the song ID already exists
+    if db.songs.find_one({"id": song_id}):
+        return jsonify({"Message": f"song with id {song_id} already present"}), 302
+    
+    # Insert the new song
+    result = db.songs.insert_one(data)
+    
+    # Convert the inserted song to a serializable format
+    data['_id'] = str(result.inserted_id)  # Convert ObjectId to string
+    
+    return jsonify(data), 201
+
+def serialize_document(doc):
+    """Convert MongoDB document to a serializable format"""
+    if doc:
+        doc["_id"] = str(doc["_id"])  # Convert ObjectId to string
+    return doc
+
+@app.route("/song/<int:id>", methods=["PUT"])
+def update_song(id):
+    """Update an existing song by id"""
+    
+    # Extract song data from the request body
+    data = request.get_json()
+    
+    # Find the song by id
+    song = db.songs.find_one({"id": id})
+    
+    if song:
+        # Update the song with the incoming data
+        db.songs.update_one({"id": id}, {"$set": data})
+        
+        # Return the updated song data
+        updated_song = db.songs.find_one({"id": id})
+        return jsonify({"song": serialize_document(updated_song)}), 200
+    else:
+        # Return 404 if the song doesn't exist
+        return jsonify({"message": "song not found"}), 404
+
+@app.route("/song/<int:id>", methods=["DELETE"])
+def delete_song(id):
+    """Delete a song by id"""
+    
+    # Attempt to delete the song from the database
+    result = db.songs.delete_one({"id": id})
+    
+    if result.deleted_count == 1:
+        # Song was successfully deleted
+        return "", 204
+    else:
+        # Song was not found
+        return jsonify({"message": "song not found"}), 404
